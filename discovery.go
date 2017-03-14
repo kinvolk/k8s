@@ -4,7 +4,10 @@ import (
 	"context"
 	"path"
 
+	"github.com/golang/protobuf/proto"
+
 	"github.com/ericchiang/k8s/api/unversioned"
+	"github.com/ericchiang/k8s/watch/versioned"
 )
 
 type Version struct {
@@ -60,4 +63,33 @@ func (d *Discovery) APIResources(ctx context.Context, groupName, groupVersion st
 	}
 	return &list, nil
 
+}
+
+type APIWatcher struct {
+	watcher *watcher
+}
+
+func (w *APIWatcher) Next() (*versioned.Event, *unversioned.APIResource, error) {
+	event, unknown, err := w.watcher.next()
+	if err != nil {
+		return nil, nil, err
+	}
+	resp := new(unversioned.APIResource)
+	if err := proto.Unmarshal(unknown.Raw, resp); err != nil {
+		return nil, nil, err
+	}
+	return event, resp, nil
+}
+
+func (w *APIWatcher) Close() error {
+	return w.watcher.Close()
+}
+
+func (d *Discovery) APIWatch(ctx context.Context, groupName, groupVersion string) (*APIWatcher, error) {
+	url := d.client.urlForPath(path.Join("apis", groupName, groupVersion))
+	watcher, err := d.client.watch(ctx, url)
+	if err != nil {
+		return nil, err
+	}
+	return &APIWatcher{watcher}, nil
 }
